@@ -1,0 +1,7 @@
+aiohttp==3.9.3
+yfinance==0.2.37
+aiosqlite==0.20.0
+python-dotenv==1.0.1
+cryptography==42.0.5
+pandas==2.2.1
+numpy==1.26.4
