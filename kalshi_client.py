@@ -71,6 +71,16 @@ class KalshiClient:
             async with session.get(f"{self.BASE_URL}{path}", headers=headers) as response:
                 return await response.json()
 
+    async def get_active_markets(self, series_ticker: str):
+        path = f"/markets?series_ticker={series_ticker}&status=active"
+        headers = self._generate_headers("GET", path)
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{self.BASE_URL}{path}", headers=headers) as response:
+                if response.status != 200:
+                    logger.error(f"Failed to fetch active markets for {series_ticker}: {await response.text()}")
+                    return None
+                return await response.json()
+
     async def create_order(self, ticker: str, action: str, type: str, yes_price: int, count: int):
         path = "/portfolio/orders"
         headers = self._generate_headers("POST", path)
