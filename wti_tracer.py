@@ -40,7 +40,7 @@ class PriceFeed:
         params = {}
         try:
             for ticker in self.tickers:
-                def fetch(t: str):
+                def fetch(t: str) -> dict | None:
                     data = yf.Ticker(t)
                     # Get 30 days of data to compute long-term mean and historical volatility
                     hist = data.history(period="1mo", interval="1d")

@@ -18,7 +18,7 @@ EIA_URL = f"https://api.eia.gov/v2/petroleum/sum/sndw/data/?api_key={EIA_API_KEY
 
 kalshi = KalshiClient()
 
-async def fetch_eia_draw_build():
+async def fetch_eia_draw_build() -> float | None:
     if not EIA_API_KEY or EIA_API_KEY == "your_eia_api_key_here":
         logger.warning("EIA API Key not configured. Skipping execution.")
         return None
