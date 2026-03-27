@@ -18,6 +18,22 @@ An automated, event-driven trading bot designed to trade Energy prediction marke
 | **Crash Alerts** | Instant Telegram notification on any task failure with error details and retry count |
 | **Resilient Loops** | All strategy loops catch transient API/network errors internally and retry |
 
+## Dynamic Risk Engine
+
+The bot dynamically sizes every trade using **Kelly Criterion** and **capital tiers** — scaling from a $10 balance to $100K+.
+
+| Tier | Balance | Max Risk/Trade | Kelly Multiplier |
+|---|---|---|---|
+| **Micro** | $10–$99 | 30% | Full Kelly |
+| **Starter** | $100–$999 | 20% | Full Kelly |
+| **Growth** | $1K–$9,999 | 15% | Full Kelly |
+| **Scale** | $10K–$49,999 | 10% | Half Kelly |
+| **Whale** | $50K–$100K+ | 5% | Quarter Kelly |
+
+- **EIA Sniper** gets 70% of the risk budget (high-conviction data arb)
+- **WTI Tracer** gets 30% of the risk budget (model-based mean reversion)
+- Balance is cached for 60s to reduce API calls, invalidated after every trade
+
 ## Getting Started
 
 ### 1. Requirements

@@ -4,6 +4,7 @@ import logging
 import math
 import time
 from kalshi_client import KalshiClient
+from risk_engine import RiskEngine
 from db import log_trade
 from telegram_bot import send_telegram_alert
 
@@ -73,6 +74,7 @@ async def wti_tracer_loop():
     logger.info("Starting WTI/NG Price Tracer Strategy...")
     feed = PriceFeed()
     kalshi = KalshiClient()
+    risk = RiskEngine()
     
     if not kalshi.private_key:
         logger.error("Kalshi Client missing RSA Key. WTI Tracer running in observation only.")
@@ -117,18 +119,48 @@ async def wti_tracer_loop():
                             fair_prob = ou_probability_above_strike(spot, K, mu, THETA, sigma, t_days)
                             fair_cents = fair_prob * 100
                             
-                            # Execution threshold triggers (Edge >> 15 cents)
+                            # ── Buy YES edge ────────────────────────────
                             if fair_cents > (yes_ask + 15):
-                                logger.info(f"🚨 TRACER ARB FOUND: Buy YES on {ticker} at {yes_ask}c (Fair: {fair_cents:.1f}c)")
-                                await kalshi.create_order(ticker, "buy", "market", yes_ask, 1)
-                                await log_trade(ticker, "buy_yes", 1, yes_ask, "wti_ou_tracer")
-                                await send_telegram_alert(f"<b>[WTI TRACER ARB]</b> Bought 1 YES on {ticker} @ {yes_ask}c 🛢️")
+                                sizing = await risk.get_position_size("wti_tracer", fair_prob, yes_ask)
                                 
+                                if sizing["contracts"] > 0:
+                                    count = sizing["contracts"]
+                                    logger.info(
+                                        f"🚨 TRACER ARB: Buy YES {ticker} | "
+                                        f"{count} @ {yes_ask}¢ (Fair: {fair_cents:.1f}¢) | "
+                                        f"Tier: {sizing['tier']} | Risk: ${sizing['risk_usd']:.2f}"
+                                    )
+                                    await kalshi.create_order(ticker, "buy", "market", yes_ask, count)
+                                    await log_trade(ticker, "buy_yes", count, yes_ask, "wti_ou_tracer")
+                                    await send_telegram_alert(
+                                        f"<b>[WTI TRACER ARB]</b> {ticker}\n"
+                                        f"📈 Buy YES: {count} @ {yes_ask}¢ (Fair: {fair_cents:.1f}¢)\n"
+                                        f"💰 Risk: ${sizing['risk_usd']:.2f} | Edge: {sizing['edge']:.2%}\n"
+                                        f"📊 Tier: {sizing['tier']} | Bal: ${sizing['balance']:.2f} 🛢️"
+                                    )
+                                    risk.invalidate_cache()
+
+                            # ── Buy NO edge ──────────────────────────────
                             elif (100 - fair_cents) > (no_ask + 15):
-                                logger.info(f"🚨 TRACER ARB FOUND: Buy NO on {ticker} at {no_ask}c (Fair NO: {(100-fair_cents):.1f}c)")
-                                await kalshi.create_order(ticker, "sell", "market", 100-no_ask, 1) # Buying NO means selling YES
-                                await log_trade(ticker, "buy_no", 1, no_ask, "wti_ou_tracer")
-                                await send_telegram_alert(f"<b>[WTI TRACER ARB]</b> Bought 1 NO on {ticker} @ {no_ask}c 🛢️")
+                                fair_no_prob = 1.0 - fair_prob
+                                sizing = await risk.get_position_size("wti_tracer", fair_no_prob, no_ask)
+                                
+                                if sizing["contracts"] > 0:
+                                    count = sizing["contracts"]
+                                    logger.info(
+                                        f"🚨 TRACER ARB: Buy NO {ticker} | "
+                                        f"{count} @ {no_ask}¢ (Fair NO: {(100-fair_cents):.1f}¢) | "
+                                        f"Tier: {sizing['tier']} | Risk: ${sizing['risk_usd']:.2f}"
+                                    )
+                                    await kalshi.create_order(ticker, "sell", "market", 100 - no_ask, count)
+                                    await log_trade(ticker, "buy_no", count, no_ask, "wti_ou_tracer")
+                                    await send_telegram_alert(
+                                        f"<b>[WTI TRACER ARB]</b> {ticker}\n"
+                                        f"📉 Buy NO: {count} @ {no_ask}¢ (Fair NO: {(100-fair_cents):.1f}¢)\n"
+                                        f"💰 Risk: ${sizing['risk_usd']:.2f} | Edge: {sizing['edge']:.2%}\n"
+                                        f"📊 Tier: {sizing['tier']} | Bal: ${sizing['balance']:.2f} 🛢️"
+                                    )
+                                    risk.invalidate_cache()
                                 
                         except ValueError:
                             continue # Could not parse strike

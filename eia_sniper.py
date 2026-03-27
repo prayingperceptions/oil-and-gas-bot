@@ -5,6 +5,7 @@ import logging
 import datetime
 from dotenv import load_dotenv
 from kalshi_client import KalshiClient
+from risk_engine import RiskEngine
 from db import log_trade, log_eia_report
 from telegram_bot import send_telegram_alert
 
@@ -17,6 +18,7 @@ EIA_API_KEY = os.getenv("EIA_API_KEY")
 EIA_URL = f"https://api.eia.gov/v2/petroleum/sum/sndw/data/?api_key={EIA_API_KEY}&frequency=weekly&data[0]=value&sort[0][column]=period&sort[0][direction]=desc&length=2"
 
 kalshi = KalshiClient()
+risk = RiskEngine()
 
 async def fetch_eia_draw_build() -> float | None:
     if not EIA_API_KEY or EIA_API_KEY == "your_eia_api_key_here":
@@ -49,28 +51,50 @@ async def execute_eia_arb(draw_build_mmbbl: float):
     
     if not market_response or "markets" not in market_response:
         return
-        
+
+    # Invalidate balance cache before a sweep to get fresh numbers
+    risk.invalidate_cache()
+
     for market in market_response["markets"]:
         ticker = market["ticker"]
         # Example Kalshi ticker: EIA-23MAR08-B2.5 (Built > 2.5m) or EIA-23MAR08-D1.0 (Drew > 1.0m)
         try:
             target_str = ticker.split("-")[-1]
+            is_arb = False
             if target_str.startswith("B"):
                 bound = float(target_str[1:])
-                # If True Build > Kalshi Bound, it's a guaranteed YES
                 if draw_build_mmbbl > bound:
-                    logger.info(f"🚨 EIA SNIPER ARB: True Build {draw_build_mmbbl:.2f} > Bound {bound}. Sweeping {ticker} YES!")
-                    await kalshi.create_order(ticker, "buy", "market", 99, 100) # Sweep the book up to 99c
-                    await log_trade(ticker, "buy_yes", 100, 99, "eia_sniper")
-                    await send_telegram_alert(f"<b>[EIA SNIPER ARB]</b> Swept YES on {ticker} for Build {draw_build_mmbbl:.2f}M 🛢️")
+                    is_arb = True
             elif target_str.startswith("D"):
                 bound = float(target_str[1:])
-                # If True Draw > Kalshi Bound (Draws are negative inventory change)
                 if draw_build_mmbbl < -bound:
-                    logger.info(f"🚨 EIA SNIPER ARB: True Draw {draw_build_mmbbl:.2f} > Bound {bound}. Sweeping {ticker} YES!")
-                    await kalshi.create_order(ticker, "buy", "market", 99, 100) 
-                    await log_trade(ticker, "buy_yes", 100, 99, "eia_sniper")
-                    await send_telegram_alert(f"<b>[EIA SNIPER ARB]</b> Swept YES on {ticker} for Draw {draw_build_mmbbl:.2f}M 🛢️")
+                    is_arb = True
+
+            if is_arb:
+                # EIA arbs are near-certain — use fair_prob ≈ 0.98
+                yes_ask = market.get("yes_ask", 99)
+                sizing = await risk.get_position_size("eia_sniper", 0.98, yes_ask)
+
+                if sizing["contracts"] > 0:
+                    count = sizing["contracts"]
+                    price = sizing["price"]
+                    logger.info(
+                        f"🚨 EIA SNIPER ARB: {ticker} | "
+                        f"{count} contracts @ {price}¢ | "
+                        f"Tier: {sizing['tier']} | Risk: ${sizing['risk_usd']:.2f}"
+                    )
+                    await kalshi.create_order(ticker, "buy", "market", price, count)
+                    await log_trade(ticker, "buy_yes", count, price, "eia_sniper")
+                    await send_telegram_alert(
+                        f"<b>[EIA SNIPER ARB]</b> {ticker}\n"
+                        f"📦 {count} contracts @ {price}¢\n"
+                        f"💰 Risk: ${sizing['risk_usd']:.2f} | Tier: {sizing['tier']}\n"
+                        f"📊 Balance: ${sizing['balance']:.2f} 🛢️"
+                    )
+                    # Re-fetch balance for the next market in this sweep
+                    risk.invalidate_cache()
+                else:
+                    logger.info(f"EIA SNIPER: No edge or insufficient balance for {ticker}")
         except Exception as e:
             continue
 
