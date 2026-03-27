@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 class KalshiClient:
-    BASE_URL = "https://trading-api.kalshi.com/trade-api/v2"
+    BASE_URL = "https://api.elections.kalshi.com/trade-api/v2"
     
     def __init__(self):
         self.api_key = os.getenv("KALSHI_API_KEY")
@@ -23,7 +23,9 @@ class KalshiClient:
         env_key = os.getenv("KALSHI_PRIVATE_KEY")
         if env_key:
             try:
-                pem_bytes = base64.b64decode(env_key)
+                # Strip whitespace/newlines that Railway may inject when pasting
+                env_key_clean = env_key.strip().replace("\n", "").replace("\r", "").replace(" ", "")
+                pem_bytes = base64.b64decode(env_key_clean)
                 self.private_key = load_pem_private_key(pem_bytes, password=None)
                 logger.info("Loaded RSA key from KALSHI_PRIVATE_KEY env var.")
                 return
