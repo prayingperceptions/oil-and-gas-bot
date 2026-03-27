@@ -22,15 +22,32 @@ class KalshiClient:
         # Set KALSHI_PRIVATE_KEY to the base64-encoded contents of your PEM file
         env_key = os.getenv("KALSHI_PRIVATE_KEY")
         if env_key:
-            try:
-                # Strip whitespace/newlines that Railway may inject when pasting
-                env_key_clean = env_key.strip().replace("\n", "").replace("\r", "").replace(" ", "")
-                pem_bytes = base64.b64decode(env_key_clean)
-                self.private_key = load_pem_private_key(pem_bytes, password=None)
-                logger.info("Loaded RSA key from KALSHI_PRIVATE_KEY env var.")
+            # Support both raw PEM text and base64-encoded PEM
+            loaded = False
+
+            # Try 1: Raw PEM (user pasted the key directly)
+            if "-----BEGIN" in env_key:
+                try:
+                    pem_bytes = env_key.encode("utf-8")
+                    self.private_key = load_pem_private_key(pem_bytes, password=None)
+                    logger.info("Loaded RSA key from env var (raw PEM).")
+                    loaded = True
+                except Exception as e:
+                    logger.warning(f"Raw PEM parse failed: {e}")
+
+            # Try 2: Base64-encoded PEM
+            if not loaded:
+                try:
+                    env_key_clean = env_key.strip().replace("\n", "").replace("\r", "").replace(" ", "")
+                    pem_bytes = base64.b64decode(env_key_clean)
+                    self.private_key = load_pem_private_key(pem_bytes, password=None)
+                    logger.info("Loaded RSA key from env var (base64).")
+                    loaded = True
+                except Exception as e:
+                    logger.error(f"Base64 PEM parse failed: {e}")
+
+            if loaded:
                 return
-            except Exception as e:
-                logger.error(f"Failed to load RSA key from env var: {e}")
 
         # ── Source 2: Local file (for local development) ─────────────────
         key_path = "kalshi.key"
@@ -85,7 +102,7 @@ class KalshiClient:
                 return await response.json()
 
     async def get_active_markets(self, series_ticker: str):
-        path = f"/markets?series_ticker={series_ticker}&status=active"
+        path = f"/markets?series_ticker={series_ticker}&status=open"
         headers = self._generate_headers("GET", path)
         async with aiohttp.ClientSession() as session:
             async with session.get(f"{self.BASE_URL}{path}", headers=headers) as response:
