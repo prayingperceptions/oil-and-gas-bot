@@ -133,6 +133,6 @@ async def wti_tracer_loop():
                         except ValueError:
                             continue # Could not parse strike
         except Exception as e:
-            logger.error(f"Error in WTI Tracer Loop: {e}")
+            logger.error(f"Error in WTI Tracer Loop (will retry): {e}")
             
-        await asyncio.sleep(60) # Evaluate every minute
+        await asyncio.sleep(60)  # Evaluate every minute

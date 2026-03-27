@@ -78,21 +78,25 @@ async def eia_sniper_loop():
     logger.info("Starting EIA Sniper strategy...")
     
     while True:
-        now = datetime.datetime.now(datetime.timezone.utc)
-        
-        # If Wednesday and close to 10:30 AM EST (14:30 EST/15:30 EDT)
-        # Note: robust implementation requires pytz parsing to handle DST cleanly. Using rough 14-16 range here.
-        if now.weekday() == 2 and now.hour in [14, 15] and 29 <= now.minute <= 35:
-            logger.info("⚡ Within EIA release window, firing API...")
-            diff = await fetch_eia_draw_build()
-            if diff is not None:
-                logger.info(f"Received Immediate EIA Delta: {diff:.2f} MMbbl")
-                await log_eia_report(diff)
-                await execute_eia_arb(diff)
-                
-                # Sleep deeply after executing to prevent duplicate spam this week
-                await asyncio.sleep(86400) 
+        try:
+            now = datetime.datetime.now(datetime.timezone.utc)
+            
+            # If Wednesday and close to 10:30 AM EST (14:30 EST/15:30 EDT)
+            # Note: robust implementation requires pytz parsing to handle DST cleanly. Using rough 14-16 range here.
+            if now.weekday() == 2 and now.hour in [14, 15] and 29 <= now.minute <= 35:
+                logger.info("⚡ Within EIA release window, firing API...")
+                diff = await fetch_eia_draw_build()
+                if diff is not None:
+                    logger.info(f"Received Immediate EIA Delta: {diff:.2f} MMbbl")
+                    await log_eia_report(diff)
+                    await execute_eia_arb(diff)
+                    
+                    # Sleep deeply after executing to prevent duplicate spam this week
+                    await asyncio.sleep(86400) 
+                else:
+                    await asyncio.sleep(0.5) # Try again in 500ms
             else:
-                await asyncio.sleep(0.5) # Try again in 500ms
-        else:
-            await asyncio.sleep(60) # Sleep longer outside the window
+                await asyncio.sleep(60) # Sleep longer outside the window
+        except Exception as e:
+            logger.error(f"EIA Sniper loop error (will retry): {e}")
+            await asyncio.sleep(30)
