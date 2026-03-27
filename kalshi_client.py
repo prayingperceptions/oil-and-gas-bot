@@ -16,21 +16,32 @@ class KalshiClient:
     
     def __init__(self):
         self.api_key = os.getenv("KALSHI_API_KEY")
-        key_path = "kalshi.key"
-        
-        if not os.path.exists(key_path):
-            logger.error(f"Key file {key_path} not found.")
-            self.private_key = None
-            return
+        self.private_key = None
 
-        with open(key_path, "rb") as f:
-            self.private_key_pem = f.read()
-            
-        try:
-            self.private_key = load_pem_private_key(self.private_key_pem, password=None)
-        except Exception as e:
-            logger.error(f"Failed to load RSA key: {e}")
-            self.private_key = None
+        # ── Source 1: Environment variable (for Railway / cloud deploys) ──
+        # Set KALSHI_PRIVATE_KEY to the base64-encoded contents of your PEM file
+        env_key = os.getenv("KALSHI_PRIVATE_KEY")
+        if env_key:
+            try:
+                pem_bytes = base64.b64decode(env_key)
+                self.private_key = load_pem_private_key(pem_bytes, password=None)
+                logger.info("Loaded RSA key from KALSHI_PRIVATE_KEY env var.")
+                return
+            except Exception as e:
+                logger.error(f"Failed to load RSA key from env var: {e}")
+
+        # ── Source 2: Local file (for local development) ─────────────────
+        key_path = "kalshi.key"
+        if os.path.exists(key_path):
+            try:
+                with open(key_path, "rb") as f:
+                    pem_bytes = f.read()
+                self.private_key = load_pem_private_key(pem_bytes, password=None)
+                logger.info("Loaded RSA key from kalshi.key file.")
+            except Exception as e:
+                logger.error(f"Failed to load RSA key from file: {e}")
+        else:
+            logger.warning("No RSA key found (set KALSHI_PRIVATE_KEY env var or provide kalshi.key file).")
         
     def _generate_headers(self, method: str, path: str):
         if not self.private_key:
