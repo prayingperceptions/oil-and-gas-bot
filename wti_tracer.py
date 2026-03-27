@@ -119,8 +119,8 @@ async def wti_tracer_loop():
                             fair_prob = ou_probability_above_strike(spot, K, mu, THETA, sigma, t_days)
                             fair_cents = fair_prob * 100
                             
-                            # ── Buy YES edge ────────────────────────────
-                            if fair_cents > (yes_ask + 15):
+                            # ── Buy YES edge (8¢ threshold for more frequent triggers) ──
+                            if fair_cents > (yes_ask + 8):
                                 sizing = await risk.get_position_size("wti_tracer", fair_prob, yes_ask)
                                 
                                 if sizing["contracts"] > 0:
@@ -140,8 +140,8 @@ async def wti_tracer_loop():
                                     )
                                     risk.invalidate_cache()
 
-                            # ── Buy NO edge ──────────────────────────────
-                            elif (100 - fair_cents) > (no_ask + 15):
+                            # ── Buy NO edge (8¢ threshold) ──────────────
+                            elif (100 - fair_cents) > (no_ask + 8):
                                 fair_no_prob = 1.0 - fair_prob
                                 sizing = await risk.get_position_size("wti_tracer", fair_no_prob, no_ask)
                                 
